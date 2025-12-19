@@ -1,0 +1,72 @@
+<script>
+let voiceEnabled = false;
+let recognition = null;
+
+// Enable voice once (user gesture)
+function enableVoice() {
+  if (!('webkitSpeechRecognition' in window)) {
+    alert("Voice input not supported in this browser.");
+    return;
+  }
+
+  recognition = new webkitSpeechRecognition();
+  recognition.lang = "en-US";
+  recognition.continuous = false;
+  recognition.interimResults = false;
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    document.getElementById("input").value = transcript;
+    send();
+  };
+
+  recognition.onerror = (event) => {
+    console.error("Speech recognition error", event);
+  };
+
+  voiceEnabled = true;
+  alert("Voice enabled. You can now speak.");
+}
+
+// Send message (text or voice)
+async function send() {
+  const input = document.getElementById("input");
+  const messages = document.getElementById("messages");
+  const text = input.value.trim();
+  if (!text) return;
+
+  messages.innerHTML += `<div class="user"><strong>You:</strong> ${text}</div>`;
+  input.value = "";
+
+  const response = await fetch("http://127.0.0.1:8000/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: text })
+  });
+
+  const data = await response.json();
+
+  messages.innerHTML += `<div class="bot"><strong>Assistant:</strong> ${data.reply}</div>`;
+  messages.scrollTop = messages.scrollHeight;
+
+  speak(data.reply);
+}
+
+// Speak response
+function speak(text) {
+  if (!voiceEnabled) return;
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = "en-US";
+  speechSynthesis.speak(utterance);
+}
+
+// Start listening (after voice enabled)
+function startVoice() {
+  if (!voiceEnabled) {
+    enableVoice();
+    return;
+  }
+  recognition.start();
+}
+</script>

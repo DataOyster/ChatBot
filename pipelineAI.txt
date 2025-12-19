@@ -1,0 +1,152 @@
+Pipeline con AI (aggiornamento automatico tramite URL)
+Scopo
+
+Descrivere la nuova pipeline estesa, in cui il chatbot si aggiorna automaticamente a partire da un URL di conferenza, senza configurazione manuale da parte del cliente.
+
+1. Obiettivo della nuova pipeline
+
+Consentire al cliente di:
+
+inserire solo un URL
+
+ottenere automaticamente un chatbot aggiornato
+
+senza scrivere FAQ
+
+senza configurare prompt
+
+senza conoscere il funzionamento interno
+
+2. Concetto chiave
+
+L’AI non risponde direttamente all’utente.
+L’AI viene usata come strumento di trasformazione dei contenuti, non come chatbot finale.
+
+Questo mantiene:
+
+controllo
+
+affidabilità
+
+coerenza con la pipeline attuale
+
+3. Nuovi componenti introdotti
+Loader URL – loader.py
+
+Riceve un URL di conferenza
+
+Scarica l’HTML del sito
+
+Estrae il testo rilevante:
+
+titolo evento
+
+date
+
+luogo
+
+descrizione
+
+ticket info
+
+FAQ presenti
+
+Pulisce il contenuto da menu, footer, cookie, ecc.
+
+LLM Processor (AI)
+
+Riceve il testo estratto dal sito
+
+Non parla con l’utente
+
+Trasforma il testo in:
+
+FAQ strutturate
+
+dati normalizzati
+
+risposte verificabili
+
+Esempi di modelli:
+
+Groq
+
+OpenAI
+
+Mistral
+
+HuggingFace (self-hosted)
+
+JSON standardizzato
+
+L’output dell’AI viene salvato in:
+
+conference_data.json
+
+booking_faq.json
+
+Con la stessa struttura già usata oggi.
+
+Questo è fondamentale per non modificare il resto del sistema.
+
+4. Pipeline completa con AI
+URL conferenza (input cliente)
+→ loader.py (scraping)
+→ AI (strutturazione contenuti)
+→ JSON standardizzati
+→ retriever.py
+→ agent.py
+→ chat.py
+→ chat.html
+
+5. Esperienza del cliente (UX)
+
+Il cliente:
+
+Inserisce un URL
+
+Clicca “Update chatbot”
+
+Fine.
+
+Il sistema:
+
+legge il sito
+
+aggiorna i dati
+
+il chatbot risponde subito con le nuove informazioni
+
+6. Vantaggi della pipeline con AI
+
+zero setup manuale
+
+aggiornamenti automatici
+
+scalabilità
+
+controllo totale delle risposte
+
+nessuna hallucination verso l’utente
+
+possibilità di fallback alla pipeline classica
+
+7. Perché mantenere entrambe le pipeline
+
+Pipeline attuale → affidabilità, demo, ambienti regolati
+
+Pipeline con AI → automazione, scalabilità, prodotto commerciale
+
+Le due pipeline coexistono, non si escludono.
+
+8. Conclusione
+
+Con questa architettura:
+
+il chatbot resta semplice
+
+l’AI lavora “dietro le quinte”
+
+il prodotto diventa vendibile
+
+il cliente non deve fare nulla
