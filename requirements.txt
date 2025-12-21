@@ -1,6 +1,11 @@
+# Existing
 fastapi
-uvicorn
+uvicorn[standard]
 requests
 beautifulsoup4
-openai
 python-dotenv
+openai
+
+# New dependencies
+pydantic-settings
+slowapi
