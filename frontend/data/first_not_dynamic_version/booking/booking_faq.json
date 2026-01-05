@@ -1,0 +1,22 @@
+[
+  {
+    "question": "Can I cancel my booking?",
+    "answer": "Yes, you can cancel your booking up to 14 days before the event."
+  },
+  {
+    "question": "Is the ticket refundable?",
+    "answer": "Tickets are refundable according to EU consumer regulations."
+  },
+  {
+    "question": "Will I receive an invoice?",
+    "answer": "Yes, an invoice will be sent automatically after booking."
+  },
+  {
+    "question": "Is accommodation included?",
+    "answer": "Accommodation is not included in the ticket price."
+  },
+  {
+    "question": "Is the conference in English?",
+    "answer": "Yes, the conference language is English."
+  }
+]

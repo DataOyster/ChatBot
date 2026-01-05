@@ -1,0 +1,129 @@
+Pipeline attuale del Chatbot (senza AI dinamica)
+Scopo
+
+Descrivere come funziona oggi il chatbot, da dove prende le informazioni e perché è affidabile ma statico.
+
+1. Panoramica generale
+
+La pipeline attuale del chatbot è rule-based e deterministica.
+Il sistema risponde solo utilizzando dati predefiniti forniti tramite file JSON locali.
+Non utilizza modelli di linguaggio esterni per generare nuove informazioni.
+
+Questo approccio garantisce:
+
+controllo totale delle risposte
+
+zero costi di AI
+
+assenza di hallucinations
+
+2. Componenti principali
+Frontend – chat.html
+
+Interfaccia web del chatbot
+
+Gestisce input testuale e vocale
+
+Invia le domande dell’utente al backend tramite HTTP
+
+Riceve la risposta e la mostra (o la legge tramite sintesi vocale)
+
+Backend – main.py
+
+Avvia il server FastAPI
+
+Configura CORS per permettere la comunicazione dal browser
+
+Registra gli endpoint API, in particolare /chat
+
+Endpoint chat – chat.py
+
+Espone l’endpoint POST /chat
+
+Riceve la domanda dell’utente
+
+Passa la domanda al motore logico (agent.py)
+
+Restituisce la risposta finale al frontend
+
+Motore del chatbot – agent.py
+
+Rappresenta il “cervello” del sistema
+
+Decide come rispondere alla domanda
+
+Non genera testo liberamente
+
+Interroga il modulo di recupero dati (retriever.py)
+
+Applica le regole definite nel prompt di sistema
+
+Regole e comportamento – prompt.py
+
+Contiene il System Prompt
+
+Definisce:
+
+tono professionale
+
+obbligo di usare solo informazioni note
+
+divieto di inventare risposte
+
+messaggio di fallback standard
+
+Esempio di fallback:
+
+“I’m not sure about this yet. I’ll forward your question to the team.”
+
+Recupero informazioni – retriever.py
+
+Carica i file JSON con dati conferenza e FAQ
+
+Confronta la domanda con parole chiave
+
+Restituisce la risposta se trovata
+
+Se non trova nulla, segnala “nessuna risposta”
+
+Fonti dati
+
+2026_stockholm.json
+Contiene tutte le informazioni ufficiali della conferenza
+
+booking_faq.json
+Contiene le FAQ su booking, cancellazioni, rimborsi, ecc.
+
+Questi file sono la fonte di verità del sistema.
+
+3. Flusso completo della pipeline attuale
+Utente (voce o testo)
+→ chat.html
+→ /chat (FastAPI)
+→ agent.py
+→ retriever.py
+→ JSON conferenza / FAQ
+→ risposta
+→ frontend
+
+4. Limiti della pipeline attuale
+
+I dati devono essere inseriti manualmente
+
+Ogni nuova conferenza richiede nuovi JSON
+
+Il chatbot non può leggere siti web
+
+Nessun aggiornamento automatico
+
+5. Conclusione
+
+La pipeline attuale è:
+
+stabile
+
+controllata
+
+ideale per demo e ambienti regolati
+
+Ma non è scalabile senza intervento umano.

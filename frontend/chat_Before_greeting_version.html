@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conference Assistant</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f5f5f5; margin:0; padding:0; }
+    #chat { max-width: 600px; margin: 40px auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    #messages { border: 1px solid #ddd; padding: 15px; height: 400px; overflow-y: auto; border-radius: 4px; margin-bottom: 15px; background:#fafafa; }
+    .user { margin: 10px 0; color: #0066cc; font-weight: bold; }
+    .bot { margin: 10px 0; color: #333; }
+    .error { color: #cc0000; background:#ffe6e6; padding:8px; border-radius:4px; }
+    .input-area { display: flex; gap: 10px; }
+    input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size:14px; }
+    button { padding: 10px 20px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; font-size:14px; transition:background 0.3s; }
+    button:hover { background: #0052a3; }
+    .speaking { background:#00cc66 !important; animation:pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.7;} }
+  </style>
+</head>
+<body>
+
+<div id="chat">
+  <h2>🎤 Conference Assistant</h2>
+  <div id="messages">
+    <div class="bot"><strong>Assistant:</strong> Hello! How can I assist you with the conference today?</div>
+  </div>
+  <div class="input-area">
+    <input id="input" placeholder="Type your question..." />
+    <button onclick="send(false)">Send</button>
+    <button id="voiceBtn" onclick="startVoice()">🎤 Voice</button>
+  </div>
+</div>
+
+<script>
+const API_URL = "http://127.0.0.1:8000/api/chat";
+const API_KEY = "demo_key_12345";
+
+const messages = document.getElementById("messages");
+let recognition = null;
+let voiceEnabled = false;
+let useVoiceOutput = false;
+
+/* ================= UI ================= */
+function addMessage(role, text, isError=false) {
+  const div = document.createElement("div");
+  div.className = role + (isError ? " error" : "");
+  div.innerHTML = `<strong>${role === "user" ? "You" : "Assistant"}:</strong> ${text}`;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+/* ================= INTENT DETECTION (FIXED) ================= */
+function normalizeText(text) {
+  return text.toLowerCase().trim().replace(/[?.!,]+$/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function isGreeting(text) {
+  const normalized = normalizeText(text);
+  const firstWord = normalized.split(/\s+/)[0];
+  return ["hi","hello","hey","good morning","good afternoon","good evening"].includes(firstWord);
+}
+
+// ✅ CRITICAL FIX: Use .includes() to catch composite phrases
+function isHowAreYou(text) {
+  const normalized = normalizeText(text);
+  
+  // Patterns that indicate "how are you" intent
+  const patterns = [
+    "how are you",
+    "how r u",
+    "how are u",
+    "hows it going",
+    "how's it going",
+    "how is it going",
+    "how do you do"
+  ];
+  
+  // Match if ANY pattern is contained in the text
+  return patterns.some(pattern => normalized.includes(pattern));
+}
+
+function isThankYou(text) {
+  const normalized = normalizeText(text);
+  // Exact matches for thank you
+  if (["thanks","thank you","thanks a lot","many thanks","thx"].includes(normalized)) {
+    return true;
+  }
+  // Starts with variations
+  if (normalized.startsWith("thank you") || normalized.startsWith("thanks ")) {
+    return true;
+  }
+  return false;
+}
+
+function isGoodbye(text) {
+  const normalized = normalizeText(text);
+  return ["bye","goodbye","see you","cya","see ya"].includes(normalized) ||
+         normalized.includes("thanks bye") ||
+         normalized.includes("thank you bye");
+}
+
+/* ================= RESPONSES ================= */
+const responses = {
+  greeting: [
+    "Hello! How can I assist you with the conference today?",
+    "Hi there! What would you like to know about the conference?",
+    "Hey! I'm here to help with any conference questions."
+  ],
+  howAreYou: [
+    "I'm doing great, thank you! How can I assist you today?",
+    "I'm here and ready to help! What can I do for you?",
+    "Doing well! What would you like to know about the conference?"
+  ],
+  thankYou: "You're welcome! I'm here to assist you anytime you need.",
+  goodbye: [
+    "Goodbye! Feel free to come back if you have more questions!",
+    "See you! Have a great conference!",
+    "Bye! Hope I was helpful!"
+  ]
+};
+
+function randomResponse(type) {
+  const list = responses[type];
+  return Array.isArray(list) ? list[Math.floor(Math.random() * list.length)] : list;
+}
+
+/* ================= VOICE OUTPUT ================= */
+function speak(text) {
+  if (!useVoiceOutput) return;
+  
+  if (speechSynthesis.speaking) {
+    speechSynthesis.cancel();
+  }
+  
+  setTimeout(() => {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-US";
+    utterance.rate = 0.9;
+    utterance.volume = 1.0;
+    
+    utterance.onerror = (e) => console.error("Speech error:", e);
+    
+    speechSynthesis.speak(utterance);
+  }, 100);
+}
+
+/* ================= MAIN SEND FUNCTION ================= */
+async function send(isVoice=false) {
+  const input = document.getElementById("input");
+  const text = input.value.trim();
+  if (!text) return;
+
+  useVoiceOutput = isVoice;
+  addMessage("user", text);
+  const originalInput = text;
+  input.value = "";
+
+  // ✅ INTENT ROUTING (order matters!)
+  
+  // 1. Greeting (must be first word)
+  if (isGreeting(text)) {
+    const response = randomResponse("greeting");
+    addMessage("bot", response);
+    speak(response);
+    return;
+  }
+
+  // 2. How are you (can be anywhere in text)
+  if (isHowAreYou(text)) {
+    const response = randomResponse("howAreYou");
+    addMessage("bot", response);
+    speak(response);
+    return;
+  }
+
+  // 3. Thank you
+  if (isThankYou(text)) {
+    const response = randomResponse("thankYou");
+    addMessage("bot", response);
+    speak(response);
+    return;
+  }
+
+  // 4. Goodbye
+  if (isGoodbye(text)) {
+    const response = randomResponse("goodbye");
+    addMessage("bot", response);
+    speak(response);
+    return;
+  }
+
+  // 5. RAG backend call (only for real questions)
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": API_KEY
+      },
+      body: JSON.stringify({ question: originalInput })
+    });
+
+    if (!res.ok) {
+      throw new Error(`Server error: ${res.status}`);
+    }
+
+    const data = await res.json();
+    addMessage("bot", data.answer);
+    speak(data.answer);
+
+  } catch(err) {
+    console.error("Backend error:", err);
+    const errorMsg = "Sorry, I couldn't connect to the server. Please make sure the backend is running.";
+    addMessage("bot", errorMsg, true);
+    speak(errorMsg);
+  }
+}
+
+/* ================= VOICE INPUT ================= */
+function enableVoice() {
+  if (!('webkitSpeechRecognition' in window)) {
+    alert("Voice input not supported in this browser. Please use Chrome or Edge.");
+    return;
+  }
+  
+  recognition = new webkitSpeechRecognition();
+  recognition.lang = "en-US";
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    document.getElementById("input").value = transcript;
+    document.getElementById("voiceBtn").classList.remove("speaking");
+    send(true);
+  };
+  
+  recognition.onerror = (event) => {
+    console.error("Speech recognition error", event);
+    document.getElementById("voiceBtn").classList.remove("speaking");
+    if (event.error !== 'no-speech') {
+      console.log("Voice error:", event.error);
+    }
+  };
+  
+  recognition.onend = () => {
+    document.getElementById("voiceBtn").classList.remove("speaking");
+  };
+  
+  voiceEnabled = true;
+  console.log("✅ Voice recognition enabled");
+}
+
+function startVoice() {
+  if (!voiceEnabled) {
+    enableVoice();
+    setTimeout(startVoice, 100);
+    return;
+  }
+  
+  try {
+    document.getElementById("voiceBtn").classList.add("speaking");
+    recognition.start();
+  } catch (error) {
+    console.error("Recognition error:", error);
+    document.getElementById("voiceBtn").classList.remove("speaking");
+  }
+}
+
+/* ================= ENTER KEY SUPPORT ================= */
+document.getElementById("input").addEventListener("keypress", (e) => {
+  if (e.key === "Enter") {
+    send(false);
+  }
+});
+
+/* ================= INITIALIZATION ================= */
+window.addEventListener('load', () => {
+  speechSynthesis.getVoices();
+  console.log("🎤 Conference Assistant ready");
+});
+</script>
+</body>
+</html>

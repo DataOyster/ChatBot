@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conference Assistant</title>
+
+  <style>
+    body { font-family: Arial, sans-serif; background:#f5f5f5; margin:0; padding:0; }
+    #chat { max-width:600px; margin:40px auto; background:#fff; padding:20px; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,.1); }
+    #messages { border:1px solid #ddd; padding:15px; height:420px; overflow-y:auto; border-radius:4px; margin-bottom:15px; background:#fafafa; }
+    .user { margin:10px 0; color:#0066cc; font-weight:bold; }
+    .bot { margin:10px 0; color:#333; }
+    .error { color:#cc0000; background:#ffe6e6; padding:8px; border-radius:4px; }
+    .input-area { display:flex; gap:10px; }
+    input { flex:1; padding:10px; border:1px solid #ddd; border-radius:4px; }
+    button { padding:10px 20px; background:#0066cc; color:#fff; border:none; border-radius:4px; cursor:pointer; transition: background 0.2s; }
+    button:hover { background:#0052a3; }
+    .listening { background:#00aa66 !important; }
+    .speaking { background:#ff9500 !important; }
+  </style>
+</head>
+
+<body>
+
+<div id="chat">
+  <h2>Conference Assistant</h2>
+
+  <div id="messages">
+    <div class="bot"><strong>Assistant:</strong> Hello! How can I assist you with the conference today?</div>
+  </div>
+
+  <div class="input-area">
+    <input id="input" placeholder="Type your question..." />
+    <button onclick="send(false)">Send</button>
+    <button id="voiceBtn" onclick="toggleVoice()">Voice</button>
+  </div>
+</div>
+
+<script>
+/* ================= CONFIG ================= */
+const API_URL = "http://127.0.0.1:8000/api/chat";
+const API_KEY = "demo_key_12345";
+
+/* ================= STATE ================= */
+const messages = document.getElementById("messages");
+const input = document.getElementById("input");
+const voiceBtn = document.getElementById("voiceBtn");
+
+let recognition = null;
+let voiceActive = false;
+let stoppingManually = false;
+let speakResponse = false;
+let isBotSpeaking = false;
+let speechTimeout = null;  // 🆕 Debounce timer
+
+const PERMISSION_KEY = 'mic_permission_granted'; // Per persistere il permesso microfono
+
+/* ================= HELPERS ================= */
+function addMessage(role, text, isError=false) {
+  const div = document.createElement("div");
+  div.className = role + (isError ? " error" : "");
+  div.innerHTML = `<strong>${role === "user" ? "You" : "Assistant"}:</strong> ${text}`;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function normalize(text) {
+  return text.toLowerCase().replace(/[^\w\s]/g,"").trim();
+}
+
+/* ================= INTENT DETECTION ================= */
+function detectIntents(text) {
+  const t = normalize(text);
+  return {
+    greeting: ["hi","hello","hey","good morning","good afternoon","good evening"].some(x => t.includes(x)),
+    howAreYou: ["how are you","how are you today","how are you doing","how r u"].some(x => t.includes(x)),
+    thankYou: t.includes("thank you") || t.includes("thanks"),
+    goodbye: ["bye","goodbye","see you"].some(x => t.includes(x))
+  };
+}
+
+/* ================= VOICE OUTPUT ================= */
+function speak(text) {
+  if (!speakResponse) return;
+
+  // 🔴 STOP microfono PRIMA di parlare
+  isBotSpeaking = true;
+  
+  if (recognition && voiceActive) {
+    try {
+      recognition.stop();
+      console.log("Mic stopped before bot speaks");
+    } catch(e) {
+      console.error("Error stopping mic:", e);
+    }
+  }
+
+  voiceBtn.classList.remove("listening");
+  voiceBtn.classList.add("speaking");
+
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "en-US";
+  u.rate = 1.0;  // 🆕 Velocità aumentata del 10% (era 0.9)
+
+  u.onend = () => {
+    console.log("Bot finished speaking");
+    isBotSpeaking = false;
+    
+    // 🔴 RIAVVIA microfono DOPO che bot ha finito
+    if (voiceActive && !stoppingManually) {
+      voiceBtn.classList.remove("speaking");
+      voiceBtn.classList.add("listening");
+      
+      setTimeout(() => {
+        if (voiceActive && !isBotSpeaking) {
+          try {
+            recognition.start();
+            console.log("Mic restarted after bot finished");
+          } catch(e) {
+            console.error("Failed to restart mic:", e);
+          }
+        }
+      }, 500);
+    }
+  };
+
+  u.onerror = () => {
+    console.error("Speech synthesis error");
+    isBotSpeaking = false;
+    if (voiceActive) {
+      voiceBtn.classList.remove("speaking");
+      voiceBtn.classList.add("listening");
+    }
+  };
+
+  speechSynthesis.speak(u);
+}
+
+/* ================= MAIN SEND ================= */
+async function send(fromVoice) {
+  const text = input.value.trim();
+  if (!text) return;
+
+  speakResponse = fromVoice;
+  addMessage("user", text);
+  input.value = "";
+
+  const i = detectIntents(text);
+
+  if (i.greeting && i.howAreYou) {
+    const r = "Good evening! I'm doing great, thank you. How can I help you with the conference today?";
+    addMessage("bot", r); speak(r); return;
+  }
+  if (i.greeting) {
+    const r = "Hello! How can I assist you with the conference?";
+    addMessage("bot", r); speak(r); return;
+  }
+  if (i.howAreYou) {
+    const r = "I'm doing great, thank you! How can I help you today?";
+    addMessage("bot", r); speak(r); return;
+  }
+  if (i.thankYou) {
+    const r = "You're welcome! I will be here to assist you anytime you need.";
+    addMessage("bot", r); speak(r); return;
+  }
+  if (i.goodbye) {
+    const r = "Goodbye! Feel free to come back anytime.";
+    addMessage("bot", r); speak(r);
+    stopVoice();
+    return;
+  }
+
+  try {
+    const res = await fetch(API_URL, {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "X-API-Key":API_KEY
+      },
+      body:JSON.stringify({ question:text })
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    addMessage("bot", data.answer);
+    speak(data.answer);
+
+  } catch (err) {
+    console.error("API Error:", err);
+    const r = "Sorry, I can't reach the server right now.";
+    addMessage("bot", r, true);
+    speak(r);
+  }
+}
+
+/* ================= PERMISSION HANDLING ================= */
+async function checkMicPermission() {
+  if (localStorage.getItem(PERMISSION_KEY) === 'true') {
+    return 'granted';
+  }
+  try {
+    const permission = await navigator.permissions.query({ name: 'microphone' });
+    if (permission.state === 'granted') {
+      localStorage.setItem(PERMISSION_KEY, 'true');
+    }
+    return permission.state;
+  } catch (e) {
+    console.error("Permission query failed:", e);
+    return 'prompt'; // Fallback
+  }
+}
+
+/* ================= VOICE INPUT - CONTINUOUS ================= */
+async function toggleVoice() {
+  if (!voiceActive) {
+    const perm = await checkMicPermission();
+    if (perm === 'denied') {
+      alert("Microphone access is denied. Please enable it in your browser settings.");
+      return;
+    }
+    if (perm === 'prompt') {
+      alert("We'll now ask for microphone permission. Grant it once, and it won't ask again for this site.");
+    }
+    startVoice();
+  } else {
+    stopVoice();
+  }
+}
+
+function startVoice() {
+  if (!("webkitSpeechRecognition" in window)) {
+    alert("Voice input not supported in this browser. Please use Chrome, Edge, or Safari.");
+    return;
+  }
+
+  recognition = new webkitSpeechRecognition();
+  recognition.lang = "en-US";
+  recognition.continuous = true;
+  recognition.interimResults = true;  // 🆕 Mostra risultati parziali
+
+  stoppingManually = false;
+
+  recognition.onstart = () => {
+    console.log("Recognition started");
+    localStorage.setItem(PERMISSION_KEY, 'true'); // Salva granted una volta iniziato
+  };
+
+  recognition.onresult = e => {
+    // 🛑 Ignora mentre bot parla
+    if (isBotSpeaking) {
+      console.log("Ignoring speech (bot is speaking)");
+      return;
+    }
+
+    const transcript = e.results[e.results.length - 1][0].transcript;
+    input.value = transcript;
+
+    // 🆕 Debounce: aspetta 3 secondi di silenzio prima di inviare
+    clearTimeout(speechTimeout);
+    speechTimeout = setTimeout(() => {
+      console.log("Sending after 3s silence");
+      send(true);
+    }, 3000);
+  };
+
+  recognition.onend = () => {
+    console.log("Recognition ended");
+    
+    // Auto-restart solo se attivo e bot non sta parlando
+    if (voiceActive && !stoppingManually && !isBotSpeaking) {
+      setTimeout(() => {
+        if (voiceActive && !stoppingManually && !isBotSpeaking) {
+          console.log("Auto-restarting recognition");
+          try {
+            recognition.start();
+          } catch(e) {
+            console.error("Restart failed:", e);
+            stopVoice();
+          }
+        }
+      }, 300);
+    }
+  };
+
+  recognition.onerror = e => {
+    console.error("Recognition error:", e.error);
+    
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      stopVoice();
+      alert("Microphone permission denied.");
+      localStorage.removeItem(PERMISSION_KEY); // Reset se denied
+    } else if (e.error === "no-speech") {
+      console.log("No speech detected");
+    } else if (e.error === "aborted") {
+      console.log("Recognition aborted");
+    } else {
+      console.warn("Voice error:", e.error);
+    }
+  };
+
+  try {
+    recognition.start();
+    voiceActive = true;
+    voiceBtn.classList.add("listening");
+    voiceBtn.textContent = "Stop";
+    console.log("Voice started - speak freely, 3s pause to send");
+  } catch(e) {
+    console.error("Failed to start:", e);
+    alert("Could not start voice: " + e.message);
+  }
+}
+
+function stopVoice() {
+  console.log("Stopping voice");
+  stoppingManually = true;
+  voiceActive = false;
+  isBotSpeaking = false;
+  
+  clearTimeout(speechTimeout);
+  
+  if (recognition) {
+    try {
+      recognition.stop();
+    } catch(e) {
+      console.error("Error stopping:", e);
+    }
+  }
+  
+  speechSynthesis.cancel();
+  voiceBtn.classList.remove("listening", "speaking");
+  voiceBtn.textContent = "Voice";
+}
+
+/* ================= KEYBOARD ================= */
+input.addEventListener("keydown", e => {
+  if (e.key === "Enter") send(false);
+});
+
+/* ================= CLEANUP ================= */
+window.addEventListener("beforeunload", () => {
+  stopVoice();
+});
+</script>
+
+</body>
+</html>
